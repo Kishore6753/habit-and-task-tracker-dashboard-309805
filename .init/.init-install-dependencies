@@ -1,0 +1,4 @@
+{
+    "command": "npm install",
+    "working_directory": "/home/kavia/workspace/code-generation/habit-and-task-tracker-dashboard-309805/frontend_react_app"
+}
