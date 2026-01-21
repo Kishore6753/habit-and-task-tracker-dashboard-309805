@@ -54,6 +54,37 @@ export function getLastNDaysRange(n, endISO = getTodayISO()) {
 }
 
 // PUBLIC_INTERFACE
+export function getLastNDays(n, endDate = new Date()) {
+  /**
+   * Returns array of Date objects (local time) of length n ending at endDate (inclusive).
+   * Useful for components that work with Date objects.
+   */
+  const out = [];
+  const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const d = new Date(end);
+    d.setDate(end.getDate() - i);
+    out.push(d);
+  }
+  return out;
+}
+
+// PUBLIC_INTERFACE
+export function getLastNWeeks({ weeks = 12, endISO = getTodayISO(), weekStartsOn = 1 } = {}) {
+  /**
+   * Returns a contiguous range of ISO dates (YYYY-MM-DD) aligned to week boundaries.
+   * Range is `weeks * 7` days long, ending at endISO, with the start aligned to `weekStartsOn`.
+   *
+   * This is ideal for GitHub-style heatmaps (weeks as columns, days as rows).
+   */
+  const endAligned = endISO;
+  const startOfEndWeek = startOfWeekISO(endAligned, weekStartsOn);
+  // End the range at endISO, start at the start of week N-1 weeks ago
+  const start = addDays(startOfEndWeek, -(weeks - 1) * 7);
+  return getLastNDaysRange(weeks * 7, addDays(start, weeks * 7 - 1));
+}
+
+// PUBLIC_INTERFACE
 export function startOfWeekISO(iso, weekStartsOn = 1) {
   /**
    * Compute ISO for start of week (default Monday=1, Sunday=0).

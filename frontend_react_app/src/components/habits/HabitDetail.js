@@ -4,6 +4,7 @@ import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
 import { getLastNDaysRange, getTodayISO } from "../../utils/date";
 import { useAppState } from "../../context/AppStateContext";
+import { HabitHeatmap } from "./HabitHeatmap";
 
 // PUBLIC_INTERFACE
 export function HabitDetail({ habit, onBack, onEdit }) {
@@ -71,6 +72,12 @@ export function HabitDetail({ habit, onBack, onEdit }) {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <HabitHeatmap habitId={habit.id} weeks={12} />
         </div>
       </div>
     </Card>

@@ -18,6 +18,10 @@ import { nanoid } from "nanoid";
 const STORAGE_KEY = "httracker.state";
 const CURRENT_VERSION = 1;
 
+// New (backward-compatible) localStorage key for per-habit completion logs.
+// Structure: { [habitId: string]: string[] } where strings are YYYY-MM-DD.
+const HABIT_COMPLETIONS_KEY = "httracker.habitCompletions";
+
 const EXPORT_APP_ID = "HabitTaskTracker";
 const EXPORT_SUPPORTED_VERSIONS = [1, 2];
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5MB
@@ -527,4 +531,115 @@ export function restoreBackupEntry(entry) {
   const validated = validateAndNormalizeImportPayload(payload);
   if (!validated.ok) return { ok: false, message: `Backup invalid: ${validated.message}` };
   return { ok: true, normalized: validated.normalized };
+}
+
+/** Internal: validate YYYY-MM-DD */
+function isYYYYMMDD(v) {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+/**
+ * Internal: read habit completion map from localStorage.
+ * Always returns a plain object map: { [habitId]: string[] }.
+ */
+function readHabitCompletionsRaw() {
+  if (typeof window === "undefined" || !window.localStorage) return {};
+  const raw = safeParse(window.localStorage.getItem(HABIT_COMPLETIONS_KEY));
+  if (!isPlainObject(raw)) return {};
+  const out = {};
+  for (const [habitId, dates] of Object.entries(raw)) {
+    if (typeof habitId !== "string") continue;
+    if (!Array.isArray(dates)) continue;
+    const cleaned = dates.filter(isYYYYMMDD);
+    out[habitId] = Array.from(new Set(cleaned)).sort();
+  }
+  return out;
+}
+
+function writeHabitCompletionsRaw(map) {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  if (!isPlainObject(map)) return;
+  window.localStorage.setItem(HABIT_COMPLETIONS_KEY, JSON.stringify(map));
+}
+
+// PUBLIC_INTERFACE
+export function ensureHabitCompletionSchema({ appState } = {}) {
+  /**
+   * Ensure the habit completion log key exists and is well-formed.
+   * Backward-compatible: if no completion map exists, it can optionally be initialized from
+   * the current appState.habits[*].datesCompleted arrays.
+   *
+   * Safe to call at any time; never throws.
+   */
+  try {
+    const existing = readHabitCompletionsRaw();
+    // If already has data, just rewrite to normalize (dedupe/sort).
+    if (Object.keys(existing).length > 0) {
+      writeHabitCompletionsRaw(existing);
+      return;
+    }
+
+    // If absent/empty and appState provided, initialize from it (migration-friendly).
+    const init = {};
+    const habits = safeArray(appState?.habits);
+    for (const h of habits) {
+      if (!h || typeof h.id !== "string") continue;
+      const dates = safeArray(h.datesCompleted).filter(isYYYYMMDD);
+      if (dates.length) init[h.id] = Array.from(new Set(dates)).sort();
+    }
+    if (Object.keys(init).length) writeHabitCompletionsRaw(init);
+  } catch {
+    // swallow
+  }
+}
+
+// PUBLIC_INTERFACE
+export function getHabitCompletionDates(habitId) {
+  /**
+   * Get completed dates for a habit from the habit completion map.
+   * Returns a sorted array of YYYY-MM-DD strings.
+   */
+  if (!habitId || typeof habitId !== "string") return [];
+  const map = readHabitCompletionsRaw();
+  return Array.isArray(map[habitId]) ? map[habitId] : [];
+}
+
+// PUBLIC_INTERFACE
+export function isHabitCompletedOnDate(habitId, isoDate) {
+  /** Returns true if habit is completed on isoDate (YYYY-MM-DD). */
+  if (!habitId || typeof habitId !== "string") return false;
+  if (!isYYYYMMDD(isoDate)) return false;
+  const dates = getHabitCompletionDates(habitId);
+  return dates.includes(isoDate);
+}
+
+// PUBLIC_INTERFACE
+export function setHabitCompletedOnDate(habitId, isoDate, completed) {
+  /**
+   * Set completion for a habit and a given date in the completion map.
+   * Returns the updated sorted array of dates for the habit.
+   */
+  if (!habitId || typeof habitId !== "string") return [];
+  if (!isYYYYMMDD(isoDate)) return getHabitCompletionDates(habitId);
+
+  const map = readHabitCompletionsRaw();
+  const set = new Set(Array.isArray(map[habitId]) ? map[habitId] : []);
+  if (completed) set.add(isoDate);
+  else set.delete(isoDate);
+
+  const nextDates = Array.from(set).filter(isYYYYMMDD).sort();
+  map[habitId] = nextDates;
+  writeHabitCompletionsRaw(map);
+  return nextDates;
+}
+
+// PUBLIC_INTERFACE
+export function toggleHabitCompletedOnDate(habitId, isoDate) {
+  /**
+   * Toggle completion for a habit and a given date in the completion map.
+   * Returns: { completed: boolean, dates: string[] }
+   */
+  const cur = isHabitCompletedOnDate(habitId, isoDate);
+  const dates = setHabitCompletedOnDate(habitId, isoDate, !cur);
+  return { completed: !cur, dates };
 }
