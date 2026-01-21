@@ -22,6 +22,16 @@ const CURRENT_VERSION = 1;
 // Structure: { [habitId: string]: string[] } where strings are YYYY-MM-DD.
 const HABIT_COMPLETIONS_KEY = "httracker.habitCompletions";
 
+// Per-habit settings for the heatmap (filters, thresholds).
+// Structure:
+// {
+//   [habitId: string]: {
+//     dateRange: { enabled: boolean, preset: "4m"|"8m"|"12m"|"custom", startISO: string|null, endISO: string|null },
+//     thresholds: { enabled: boolean, mode: "max"|"buckets", max: number, buckets: number[] } // buckets length=4 (cutoffs for 1..4)
+//   }
+// }
+const HABIT_HEATMAP_SETTINGS_KEY = "httracker.habitHeatmapSettings";
+
 const EXPORT_APP_ID = "HabitTaskTracker";
 const EXPORT_SUPPORTED_VERSIONS = [1, 2];
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5MB
@@ -562,6 +572,61 @@ function writeHabitCompletionsRaw(map) {
   window.localStorage.setItem(HABIT_COMPLETIONS_KEY, JSON.stringify(map));
 }
 
+function normalizeHeatmapSettings(raw) {
+  // Defaults keep current behavior unchanged unless user enables filters.
+  const defaults = {
+    dateRange: { enabled: false, preset: "12m", startISO: null, endISO: null },
+    thresholds: { enabled: false, mode: "max", max: 1, buckets: [1, 2, 3, 4] }
+  };
+
+  if (!isPlainObject(raw)) return defaults;
+
+  const dateRangeRaw = isPlainObject(raw.dateRange) ? raw.dateRange : {};
+  const thresholdsRaw = isPlainObject(raw.thresholds) ? raw.thresholds : {};
+
+  const dateRange = {
+    enabled: Boolean(dateRangeRaw.enabled),
+    preset: ["4m", "8m", "12m", "custom"].includes(dateRangeRaw.preset) ? dateRangeRaw.preset : "12m",
+    startISO: isYYYYMMDD(dateRangeRaw.startISO) ? dateRangeRaw.startISO : null,
+    endISO: isYYYYMMDD(dateRangeRaw.endISO) ? dateRangeRaw.endISO : null
+  };
+
+  const mode = ["max", "buckets"].includes(thresholdsRaw.mode) ? thresholdsRaw.mode : "max";
+  const max = typeof thresholdsRaw.max === "number" && Number.isFinite(thresholdsRaw.max) && thresholdsRaw.max >= 1 ? Math.floor(thresholdsRaw.max) : 1;
+
+  let buckets = Array.isArray(thresholdsRaw.buckets) ? thresholdsRaw.buckets : defaults.thresholds.buckets;
+  buckets = buckets
+    .map((n) => (typeof n === "number" && Number.isFinite(n) ? Math.floor(n) : null))
+    .filter((n) => typeof n === "number" && n >= 1)
+    .slice(0, 4);
+
+  // Ensure exactly 4 ascending cutoffs; fall back to defaults if invalid.
+  const isStrictAsc = buckets.length === 4 && buckets.every((v, i) => (i === 0 ? true : v > buckets[i - 1]));
+  if (!isStrictAsc) buckets = defaults.thresholds.buckets;
+
+  const thresholds = {
+    enabled: Boolean(thresholdsRaw.enabled),
+    mode,
+    max,
+    buckets
+  };
+
+  return { dateRange, thresholds };
+}
+
+function readHabitHeatmapSettingsRaw() {
+  if (typeof window === "undefined" || !window.localStorage) return {};
+  const raw = safeParse(window.localStorage.getItem(HABIT_HEATMAP_SETTINGS_KEY));
+  if (!isPlainObject(raw)) return {};
+  return raw;
+}
+
+function writeHabitHeatmapSettingsRaw(map) {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  if (!isPlainObject(map)) return;
+  window.localStorage.setItem(HABIT_HEATMAP_SETTINGS_KEY, JSON.stringify(map));
+}
+
 // PUBLIC_INTERFACE
 export function ensureHabitCompletionSchema({ appState } = {}) {
   /**
@@ -642,4 +707,46 @@ export function toggleHabitCompletedOnDate(habitId, isoDate) {
   const cur = isHabitCompletedOnDate(habitId, isoDate);
   const dates = setHabitCompletedOnDate(habitId, isoDate, !cur);
   return { completed: !cur, dates };
+}
+
+// PUBLIC_INTERFACE
+export function getHabitHeatmapSettings(habitId) {
+  /**
+   * Get per-habit heatmap settings from localStorage (filters + thresholds).
+   * Defaults are returned when settings are missing/invalid.
+   */
+  if (!habitId || typeof habitId !== "string") {
+    return normalizeHeatmapSettings(null);
+  }
+  const map = readHabitHeatmapSettingsRaw();
+  return normalizeHeatmapSettings(map[habitId]);
+}
+
+// PUBLIC_INTERFACE
+export function setHabitHeatmapSettings(habitId, nextSettings) {
+  /**
+   * Persist per-habit heatmap settings to localStorage.
+   * Returns the normalized saved value.
+   */
+  if (!habitId || typeof habitId !== "string") return normalizeHeatmapSettings(null);
+
+  const map = readHabitHeatmapSettingsRaw();
+  const normalized = normalizeHeatmapSettings(nextSettings);
+
+  map[habitId] = normalized;
+  writeHabitHeatmapSettingsRaw(map);
+  return normalized;
+}
+
+// PUBLIC_INTERFACE
+export function resetHabitHeatmapSettings(habitId) {
+  /**
+   * Remove per-habit heatmap settings override (reverts to defaults).
+   */
+  if (!habitId || typeof habitId !== "string") return;
+  const map = readHabitHeatmapSettingsRaw();
+  if (Object.prototype.hasOwnProperty.call(map, habitId)) {
+    delete map[habitId];
+    writeHabitHeatmapSettingsRaw(map);
+  }
 }

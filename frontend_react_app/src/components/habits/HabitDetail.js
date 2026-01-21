@@ -77,7 +77,7 @@ export function HabitDetail({ habit, onBack, onEdit }) {
 
       <div className="mt-6">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <HabitHeatmap habitId={habit.id} weeks={12} />
+          <HabitHeatmap habitId={habit.id} weeks={12} showControls />
         </div>
       </div>
     </Card>
