@@ -1,48 +1,48 @@
-import React, { useState, useEffect } from 'react';
-import logo from './logo.svg';
-import './App.css';
+import React, { useMemo } from "react";
+import "./App.css";
+import { AppStateProvider, useAppState, useSyncRouteOnPopstate } from "./context/AppStateContext";
+import { Layout } from "./components/Layout";
+import { ToastStack } from "./components/ToastStack";
+import { DashboardPage } from "./pages/DashboardPage";
+import { HabitsPage } from "./pages/HabitsPage";
+import { TasksPage } from "./pages/TasksPage";
+import { SettingsPage } from "./pages/SettingsPage";
+
+/**
+ * Main App entry:
+ * - Provides global state via AppStateProvider
+ * - Implements a lightweight internal router based on window.location.pathname + state.filters.view
+ * - Renders app shell (Layout) and the active view
+ */
+
+function RouterView() {
+  const { state } = useAppState();
+  useSyncRouteOnPopstate();
+
+  const view = state.filters?.view || "dashboard";
+
+  const page = useMemo(() => {
+    if (view === "habits") return <HabitsPage />;
+    if (view === "tasks") return <TasksPage />;
+    if (view === "settings") return <SettingsPage />;
+    return <DashboardPage />;
+  }, [view]);
+
+  return (
+    <Layout>
+      {page}
+      <ToastStack />
+    </Layout>
+  );
+}
 
 // PUBLIC_INTERFACE
 function App() {
-  const [theme, setTheme] = useState('light');
-
-  // Effect to apply theme to document element
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  // PUBLIC_INTERFACE
-  const toggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
-  };
-
+  /** Application root component. */
   return (
-    <div className="App">
-      <header className="App-header">
-        <button 
-          className="theme-toggle" 
-          onClick={toggleTheme}
-          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-        >
-          {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
-        </button>
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <p>
-          Current theme: <strong>{theme}</strong>
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <AppStateProvider>
+      <RouterView />
+    </AppStateProvider>
   );
 }
 
